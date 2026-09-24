@@ -657,13 +657,6 @@ a:hover { color: var(--brand-hover); }
   cursor: pointer;
   user-select: all;
 }
-.field .value:has(+ .copy) { font-family: var(--font); }
-.field .value[data-raw*="."],
-.field .value[data-raw*=":"],
-.field .value.secret,
-.field .label:has(+ .value[data-raw*="."]) + .value {
-  font-family: var(--font);
-}
 /* Use mono only for things that really need it */
 .field[data-label*="MAC" i] .value,
 .field[data-label*="IP" i] .value,
@@ -944,6 +937,15 @@ a:hover { color: var(--brand-hover); }
 }
 .cred-table .pw.masked { letter-spacing: 0.1em; }
 .cred-table .row-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  min-width: 4.5rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  line-height: 1.4;
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--text-muted);
@@ -1456,7 +1458,7 @@ pre.raw {
 }
 </style>
 <style id="responsive-presentation">
-/* Responsive presentation revision 1.1.0, 24 September 2026.
+/* Responsive presentation revision 1.1.2, 24 September 2026.
    Hotspot palette: cream #FFF3DF, orange #C2410C, brown #4A2C1A.
    Card containers determine field layout. Raw names and values stay intact.
    The backup decoder and bundled libraries are unchanged. */
@@ -1533,14 +1535,17 @@ button, a, input, summary, [tabindex] { -webkit-tap-highlight-color: transparent
 .entity-card .copy-card-btn { top: 20px; right: 18px; border-radius: 7px; padding: 5px 9px; line-height: 1.5; }
 .field {
   display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr) auto auto;
+  --field-action-width: 3.5rem;
+  grid-template-columns: minmax(0, clamp(12rem, 36%, 22rem)) minmax(0, 1fr) var(--field-action-width) var(--field-action-width);
   align-items: start;
   gap: 8px 12px;
   padding: 11px 8px;
   line-height: 1.65;
   border-radius: 5px;
 }
-/* Let ordinary rows use the same value column as rows with a reveal button. */
+/* Fixed action tracks keep values aligned with or without a Show button.
+   Cap the label column so values stay close to labels on wide cards. */
+.field > .label, .field > .value, .field > .reveal, .field > .copy { grid-row: 1; }
 .field .label {
   grid-column: 1;
   width: auto;
@@ -1565,9 +1570,21 @@ button, a, input, summary, [tabindex] { -webkit-tap-highlight-color: transparent
 .field:not(:has(> .reveal)) .value { grid-column: 2 / 4; }
 .field .reveal { grid-column: 3; }
 .field .copy { grid-column: 4; }
-.field .copy, .field .reveal { align-self: start; padding: 5px 8px; line-height: 1.4; border-radius: 7px; background: var(--surface); font-size: 10px; }
+.field .copy, .field .reveal { align-self: start; justify-self: stretch; min-width: 0; width: 100%; padding: 5px 8px; line-height: 1.4; border-radius: 7px; background: var(--surface); font-size: 10px; white-space: nowrap; }
 .field + .field, .card-section-body .field + .field { border-top: 1px solid var(--border); }
-.field .value.secret { letter-spacing: .04em; }
+/* Mask dots use one font and weight in cards and credential tables.
+   Field-name heuristics must not change the mask's size or apparent weight. */
+.field .value.secret, .cred-table .pw.masked {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 400;
+  font-synthesis: none;
+  font-variant-ligatures: none;
+  letter-spacing: .08em;
+  line-height: 1.65;
+  text-align: left;
+}
 .card-section-head, .subhead, .section-title { color: var(--brand-text); flex-wrap: wrap; }
 details.deep > summary { overflow-wrap: anywhere; flex-wrap: wrap; }
 details.deep summary::before { flex: 0 0 auto; }
@@ -1576,6 +1593,14 @@ pre.raw { max-width: 100%; }
 .cred-table { min-width: 700px; }
 .cred-table th, .cred-table td { white-space: normal; overflow-wrap: anywhere; }
 .cred-table td { max-width: 420px; }
+/* Action cells must fit the complete button label, including copy feedback. */
+.cred-table td:has(> .row-copy) {
+  width: 1%;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-align: right;
+}
 .cred-table .pw { display: inline-block; max-width: 320px; overflow-wrap: anywhere; }
 .matrix-head { flex-wrap: wrap; min-width: 0; }
 .port-mgr-wrap { container-type: inline-size; container-name: ports; }
@@ -1591,7 +1616,7 @@ pre.raw { max-width: 100%; }
 .dropzone-privacy { color: var(--text-muted); }
 @container entity (max-width: 540px) {
   /* Stack a long machine-readable key above its value instead of squeezing it. */
-  .field { grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding-top: 12px; padding-bottom: 12px; }
+  .field { grid-template-columns: minmax(0, 1fr) var(--field-action-width) var(--field-action-width); gap: 8px; padding-top: 12px; padding-bottom: 12px; }
   .field .label { grid-column: 1 / -1; grid-row: 1; font-size: 11px; }
   .field .value, .field:not(:has(> .reveal)) .value { grid-column: 1; grid-row: 2; }
   .field .reveal { grid-column: 2; grid-row: 2; }
@@ -1652,13 +1677,14 @@ pre.raw { max-width: 100%; }
   .grid, .tabpanel[data-tab="settings"] .grid { grid-template-columns: minmax(0, 1fr); }
   .entity-card { container-type: normal; }
   .entity-card .copy-card-btn, .field .copy, .field .reveal, .tab-actions { display: none; }
-  .field { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
-  .field .value, .field:not(:has(> .reveal)) .value { grid-column: 2; }
+  .field { grid-template-columns: minmax(0, clamp(12rem, 36%, 22rem)) minmax(0, 1fr); }
+  .field .label { grid-column: 1; grid-row: 1; }
+  .field .value, .field:not(:has(> .reveal)) .value { grid-column: 2; grid-row: 1; }
   .cred-table-wrap { overflow: visible; }
   .cred-table { min-width: 0; table-layout: fixed; }
 }
 </style>
-<script type="text/javascript" nonce="97bb3700f797413999c2cf2798e" src="//local.adguard.org?ts=1790279087597&amp;type=content-script&amp;dmn=chatgpt.com&amp;url=https%3A%2F%2Fchatgpt.com%2Fbackend-api%2Festuary%2Fcontent%3Fid%3Dfile_00000000acc882308b8339fcc2058882%26fn%3Dindex%25281%2529.html%26cd%3Dattachment%26ts%3D497299%26p%3Dfs%26cid%3D1%26sig%3Dfe8f4fdf6f3d21074a51329126da8f41528587e1218e285ff007ae149b258f94%26v%3D0&amp;app=org.mozilla.firefox&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-push&amp;st-loc&amp;st-dnt"></script><script type="text/javascript" nonce="97bb3700f797413999c2cf2798e" src="//local.adguard.org?ts=1790279087597&amp;name=AdGuard%20Extra&amp;type=user-script"></script></head>
+<script type="text/javascript" nonce="97bb3700f797413999c2cf2798e" src="//local.adguard.org?ts=1790279087597&amp;type=content-script&amp;dmn=chatgpt.com&amp;url=https%3A%2F%2Fchatgpt.com%2Fbackend-api%2Festuary%2Fcontent%3Fid%3Dfile_000000000d488210bda4981802c7a08a%26fn%3Dindex%25281%2529.html%26cd%3Dattachment%26ts%3D497300%26p%3Dfs%26cid%3D1%26sig%3D1f408daa654ac66773d3c458e78df001348d21ed3bf587a3d11fdb509f44951a%26v%3D0&amp;app=org.mozilla.firefox&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-push&amp;st-loc&amp;st-dnt"></script><script type="text/javascript" nonce="97bb3700f797413999c2cf2798e" src="//local.adguard.org?ts=1790279087597&amp;name=AdGuard%20Extra&amp;type=user-script"></script></head>
 <body>
 
 <!-- ═══ Header ═══ -->
@@ -2963,7 +2989,7 @@ function field(label, value, opts = {}) {
   const raw = opts.copyValue !== undefined ? String(opts.copyValue) : fullDisplay;
   const display = opts.secret ? '••••••••••' : fullDisplay;
   return `<div class="field" data-label="${esc(label)}" data-raw="${esc(raw)}">
-    <span class="label">${esc(label)}</span>
+    <span class="label">${esc(label).replace(/([_-])/g, '$1<wbr>')}</span>
     <span class="value${opts.secret ? ' secret' : ''}" data-raw="${esc(raw)}" data-display="${esc(fullDisplay)}" title="click to copy">${esc(display)}</span>
     ${opts.secret ? '<button class="reveal" data-action="reveal" title="Show/hide">show</button>' : ''}
     <button class="copy" data-action="copy" title="Copy value">copy</button>
