@@ -1684,7 +1684,7 @@ pre.raw { max-width: 100%; }
   .cred-table { min-width: 0; table-layout: fixed; }
 }
 </style>
-<script type="text/javascript" nonce="97bb3700f797413999c2cf2798e" src="//local.adguard.org?ts=1790279087597&amp;type=content-script&amp;dmn=chatgpt.com&amp;url=https%3A%2F%2Fchatgpt.com%2Fbackend-api%2Festuary%2Fcontent%3Fid%3Dfile_000000000d488210bda4981802c7a08a%26fn%3Dindex%25281%2529.html%26cd%3Dattachment%26ts%3D497300%26p%3Dfs%26cid%3D1%26sig%3D1f408daa654ac66773d3c458e78df001348d21ed3bf587a3d11fdb509f44951a%26v%3D0&amp;app=org.mozilla.firefox&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-push&amp;st-loc&amp;st-dnt"></script><script type="text/javascript" nonce="97bb3700f797413999c2cf2798e" src="//local.adguard.org?ts=1790279087597&amp;name=AdGuard%20Extra&amp;type=user-script"></script></head>
+</head>
 <body>
 
 <!-- ═══ Header ═══ -->
@@ -1716,7 +1716,7 @@ pre.raw { max-width: 100%; }
         <div class="dropzone-title">Drop your UniFi backup here</div>
         <div class="dropzone-sub">or click to choose a <code>.unf</code> or <code>.unifi</code> file</div>
         <div class="dropzone-privacy">Parsed locally · No upload · No telemetry</div>
-        <input type="file" id="filepicker" accept=".unf,.unifi,.zip,.gz,.bson">
+        <input type="file" id="filepicker" accept=".unf,.unifi,.zip,.gz,.bson,.jsonl">
       </div>
     </div>
 
@@ -1763,7 +1763,7 @@ pre.raw { max-width: 100%; }
           <div class="how-step-body">
             <div class="how-step-name">Decompress</div>
             <div class="how-step-desc">
-              Decrypted payloads are containers, not data. <strong>.unf</strong> opens to a ZIP holding <code>db.gz</code>, version info, and metadata. <strong>.unifi</strong> opens to a gzipped TAR; inside, <code>backup/network/</code> holds a complete .unf-equivalent payload, and sibling folders carry console info, app versions, and paired-device records. Both paths converge on the same inner <code>db.gz</code>.
+              Decrypted payloads are containers, not data. <strong>.unf</strong> opens to a ZIP holding <code>db.gz</code>, version info, and metadata. <strong>.unifi</strong> opens to a gzipped TAR; inside, <code>backup/network/</code> holds a complete .unf-equivalent payload, and sibling folders carry console info, app versions, and paired-device records. Network data is stored as BSON in <code>db.gz</code> or as PostgreSQL JSONL in <code>db-config.jsonl.gz</code>.
             </div>
           </div>
         </div>
@@ -1772,7 +1772,7 @@ pre.raw { max-width: 100%; }
           <div class="how-step-body">
             <div class="how-step-name">Parse</div>
             <div class="how-step-desc">
-              <code>db.gz</code> ungzips to a MongoDB dump in one of two BSON wire formats: the legacy <em>mongodump archive</em> stream (magic <code>0x8199e26d</code>, pre-Network 10.x) or the newer <code>__cmd: "select"</code> command stream (10.x+). Documents are grouped by collection — <code>setting</code>, <code>wlanconf</code>, <code>networkconf</code>, <code>user</code>, <code>firewallrule</code>, <code>device</code>, and dozens more — then assembled into the tabs you'll navigate above.
+              <code>db.gz</code> ungzips to a MongoDB dump in one of two BSON wire formats: the legacy <em>mongodump archive</em> stream (magic <code>0x8199e26d</code>, pre-Network 10.x) or the <code>__cmd: "select"</code> command stream. PostgreSQL backups use <code>postgres_v1</code> with table headers, row arrays and typed values in <code>db-config.jsonl.gz</code>. The reader adapts those tables for display and retains the original records under All collections. Documents are grouped by collection — <code>setting</code>, <code>wlanconf</code>, <code>networkconf</code>, <code>user</code>, <code>firewallrule</code>, <code>device</code>, and dozens more — then assembled into the tabs you'll navigate above.
             </div>
           </div>
         </div>
@@ -2831,6 +2831,145 @@ function parsePlainStream(buf) {
   return cols;
 }
 
+// ─── PostgreSQL JSONL decoder and view compatibility ─────────────────────
+// Source collections retain their table names, columns and typed values.
+// Only viewCollections are adapted to the field names used by the UI.
+const SOURCE_DOCUMENTS = new WeakMap();
+const POSTGRES_TABLE_ALIASES = Object.freeze({
+  network_conf: 'networkconf', wlan_conf: 'wlanconf', user_client: 'user',
+  firewall_group: 'firewallgroup', port_forward: 'portforward', port_conf: 'portconf',
+  ap_group: 'apgroup', user_group: 'usergroup', radius_profile: 'radiusprofile',
+  radius_user: 'account', schedule_task: 'scheduletask', dynamic_dns: 'dynamicdns',
+  dhcp_option: 'dhcpoption', hotspot_operation: 'hotspotop',
+  hotspot_package: 'hotspotpackage', hotspot2_conf: 'hotspot2conf',
+});
+
+function decodePostgresValue(value) {
+  if (Array.isArray(value)) return value.map(decodePostgresValue);
+  if (!value || typeof value !== 'object') return value;
+  if (Object.hasOwn(value, '_vt')) {
+    if (value._vt === 'uuid' && typeof value.value === 'string') return value.value;
+    if (value._vt === 'jsonb' && typeof value.json === 'string') {
+      // JSONB is application data, not another layer of export wrappers.
+      return JSON.parse(value.json);
+    }
+    throw new Error('unsupported PostgreSQL value wrapper');
+  }
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, decodePostgresValue(v)]));
+}
+
+function parsePostgresJsonl(buf) {
+  const lines = new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, '').split(/\r?\n/);
+  const collections = new Map();
+  let table = null;
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    let row;
+    try { row = JSON.parse(lines[i]); }
+    catch { throw new Error(`invalid PostgreSQL JSONL at line ${i + 1}`); }
+    const fail = reason => { throw new Error(`PostgreSQL JSONL line ${i + 1}: ${reason}`); };
+    if (!row || typeof row !== 'object' || Array.isArray(row)) fail('expected a table or row record');
+    if (row._t === 'table') {
+      if (typeof row.schema !== 'string' || !row.schema || typeof row.table !== 'string' || !row.table ||
+          !Array.isArray(row.columns) || !row.columns.every(c => typeof c === 'string' && c) ||
+          new Set(row.columns).size !== row.columns.length) fail('invalid table definition');
+      const ns = `${row.schema}.${row.table}`;
+      if (collections.has(ns)) fail('duplicate table definition');
+      table = { db: row.schema, name: row.table, columns: row.columns.slice(), docs: [] };
+      collections.set(ns, table);
+    } else if (row._t === 'row') {
+      if (!table) fail('row precedes its table definition');
+      if (!Array.isArray(row.v) || row.v.length !== table.columns.length) fail('row width does not match table columns');
+      const doc = Object.fromEntries(table.columns.map((column, n) => [column, row.v[n]]));
+      try { decodePostgresValue(doc); }
+      catch { fail('invalid or unsupported typed value'); }
+      table.docs.push(doc);
+    } else fail('unsupported record type');
+  }
+  if (!collections.size) throw new Error('no PostgreSQL tables found');
+  return collections;
+}
+
+function postgresViewCollections(collections) {
+  const views = new Map();
+  const idMap = new Map();
+  for (const c of collections.values()) {
+    if (c.db !== 'config' || c.name !== 'id_mapping') continue;
+    for (const raw of c.docs) {
+      const row = decodePostgresValue(raw);
+      if (typeof row.source === 'string' && typeof row.target === 'string') {
+        // Ambiguous historical IDs remain visible instead of resolving incorrectly.
+        idMap.set(row.source, idMap.has(row.source) && idMap.get(row.source) !== row.target ? null : row.target);
+      }
+    }
+  }
+  const reference = value => typeof value === 'string' ? (idMap.get(value) || value) : value;
+  const normaliseReferences = (value, key = '') => {
+    if (Array.isArray(value)) return value.map(v => normaliseReferences(v, key));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normaliseReferences(v, k)]));
+    return /(?:^_id$|_ids?$)/.test(key) ? reference(value) : value;
+  };
+  const alias = (doc, to, from) => {
+    if (doc[to] == null && doc[from] != null) doc[to] = doc[from];
+  };
+  const fieldAliases = {
+    site: { desc: 'description' },
+    networkconf: { networkgroup: 'network_group', wan_networkgroup: 'wan_network_group', usergroup_id: 'user_group_id', dpi_group: 'dpi_group_id' },
+    wlanconf: { x_passphrase: 'passphrase', x_iapp_key: 'iapp_key', networkconf_id: 'network_conf_id', usergroup_id: 'user_group_id', radiusprofile_id: 'radius_profile_id', hotspot2conf_id: 'hotspot2_conf_id' },
+    user: { use_fixedip: 'use_fixed_ip', usergroup_id: 'user_group_id', wlanconf_id: 'wlan_conf_id', ip: 'last_ip', network_id: 'last_connection_network_id' },
+    device: { cfgversion: 'config_version' },
+    firewallgroup: { group_type: 'type' },
+    portforward: { src: 'source_ip', dst_port: 'destination_port', dst_ip: 'destination_ip', fwd: 'forward_ip', fwd_port: 'forward_port', proto: 'protocol', pfwd_interface: 'destination_interface', src_limiting_enabled: 'source_limiting_enabled' },
+    dynamicdns: { x_password: 'password', interface: 'interface_name' },
+    scheduletask: { cron: 'cron_expression' },
+    admin: { is_super: 'is_super_admin', x_shadow: 'shadow', last_login_from: 'last_login_ip' },
+    apgroup: { attr_no_delete: 'non_deletable' },
+    firewall_zone: { attr_no_edit: 'no_edit' },
+    wireguard_user: { preshared_key: 'pre_shared_key' },
+  };
+  for (const [ns, c] of collections) {
+    const name = c.db === 'config' ? (POSTGRES_TABLE_ALIASES[c.name] || c.name) : c.name;
+    const docs = c.docs.map(raw => {
+      const decoded = decodePostgresValue(raw);
+      const { dynamic_part: dynamic, ...columns } = decoded;
+      if (dynamic != null && (Array.isArray(dynamic) || typeof dynamic !== 'object')) {
+        throw new Error(`invalid dynamic_part in ${ns}`);
+      }
+      // Explicit relational columns take precedence, including false and null.
+      const doc = normaliseReferences({ ...(dynamic || {}), ...columns, _id: columns.id });
+      alias(doc, 'attr_hidden_id', 'hidden_id');
+      for (const [to, from] of Object.entries(fieldAliases[name] || {})) alias(doc, to, from);
+      if (name === 'device') doc.type = String(doc.type || 'other').toLowerCase();
+      if (name === 'firewallgroup') {
+        doc.group_type = ({ PORT: 'port-group', IPV4_ADDRESS: 'address-group', IPV6_ADDRESS: 'ipv6-address-group' })[doc.group_type] || doc.group_type;
+      }
+      SOURCE_DOCUMENTS.set(doc, raw);
+      return doc;
+    });
+    views.set(ns, { db: c.db, name, docs });
+  }
+  return views;
+}
+
+function decodeDatabase(buf, hint = '') {
+  let pos = 0;
+  if (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) pos = 3;
+  while (pos < buf.length && [9, 10, 13, 32].includes(buf[pos])) pos++;
+  if (hint === 'postgres_v1' || buf[pos] === 0x7b) {
+    const collections = parsePostgresJsonl(buf);
+    return { collections, viewCollections: postgresViewCollections(collections), databaseFormat: 'postgres_v1' };
+  }
+  if (buf.length < 5) throw new Error('database is empty or truncated');
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const head = view.getUint32(0, true);
+  if (head !== ARCHIVE_MAGIC && (head < 5 || head > buf.length || buf[head - 1] !== 0)) {
+    throw new Error('unsupported database format (expected BSON or PostgreSQL JSONL)');
+  }
+  const collections = parseArchive(buf);
+  if (!collections.size) throw new Error('no BSON collections found');
+  return { collections, databaseFormat: head === ARCHIVE_MAGIC ? 'mongodump_archive' : 'bson_stream' };
+}
+
 // ─── Decrypt ─────────────────────────────────────────────────────────────
 function isZip(buf) {
   return buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07);
@@ -2878,16 +3017,21 @@ function tarEntries(buf) {
 // ─── Top-level load ──────────────────────────────────────────────────────
 async function loadFile(file) {
   try {
+    CURRENT = null;
+    document.getElementById('upload-main').hidden = false;
+    document.getElementById('viewer-main').hidden = true;
+    document.getElementById('reset').hidden = true;
     status(`reading ${file.name}…`, 'busy');
     const ab = await file.arrayBuffer();
     let buf = new Uint8Array(ab);
+    if (isZip(buf)) return processInner(fflate.unzipSync(buf), file.name, {});
+    if (isGzip(buf)) return processInner({ db: tolerantGunzip(buf) }, file.name, {});
+    if (/\.(bson|jsonl)$/i.test(file.name)) return processInner({ db: buf }, file.name, {});
     if (/\.unifi$/i.test(file.name) || /^unifi_os_backup_/i.test(file.name)) {
-      return loadUnifiOs(buf, file.name);
+      return await loadUnifiOs(buf, file.name);
     }
     let zipBuf;
-    if (isZip(buf)) zipBuf = buf;
-    else if (isGzip(buf)) return processInner({ 'db': fflate.gunzipSync(buf) }, file.name, {});
-    else {
+    {
       status('decrypting (.unf)…', 'busy');
       zipBuf = decrypt(buf);
       if (!isZip(zipBuf)) {
@@ -2900,6 +3044,10 @@ async function loadFile(file) {
     return processInner(entries, file.name, {});
   } catch (e) {
     console.error(e);
+    CURRENT = null;
+    document.getElementById('upload-main').hidden = false;
+    document.getElementById('viewer-main').hidden = true;
+    document.getElementById('reset').hidden = true;
     status(`error: ${e.message}`, 'error');
     toast(`Failed: ${e.message}`, true);
   }
@@ -2917,7 +3065,9 @@ async function loadUnifiOs(buf, fname) {
   const consoleMeta = { apps: new Set(), files: [] };
   const td = new TextDecoder();
 
-  for (const { name, data } of tarFiles) {
+  for (const entry of tarFiles) {
+    const name = entry.name.replace(/^(\.\/)+/, '');
+    const data = entry.data;
     consoleMeta.files.push({ name, size: data.length });
     if (name.startsWith('backup/network/')) {
       const inner = name.slice('backup/network/'.length);
@@ -2942,16 +3092,19 @@ async function loadUnifiOs(buf, fname) {
     else if (name === 'backup/ucore/system-data.json') tryJson('ucoreSystem');
   }
 
-  if (!networkEntries['db.gz']) throw new Error('this UniFi OS backup contains no Network app data');
+  if (!Object.keys(networkEntries).length) throw new Error('this UniFi OS backup contains no Network app data');
   return processInner(networkEntries, fname, consoleMeta);
 }
 
 function processInner(entries, fname, consoleMeta = {}) {
   status('parsing database…', 'busy');
   const meta = {};
-  let dbBuf = null, statBuf = null;
-  for (const [name, data] of Object.entries(entries)) {
+  let dbBuf = null, rawDb = null, postgresBuf = null, statBuf = null;
+  for (const [path, data] of Object.entries(entries)) {
+    const name = path.split('/').pop();
     if (name === 'db.gz' || name.endsWith('/db.gz')) dbBuf = data;
+    else if (name === 'db') rawDb = data;
+    else if (name === 'db-config.jsonl.gz') postgresBuf = data;
     else if (name === 'db_stat.gz' || name.endsWith('/db_stat.gz')) statBuf = data;
     else if (name === 'version') meta.version = new TextDecoder().decode(data).trim();
     else if (name === 'format') meta.format = new TextDecoder().decode(data).trim();
@@ -2963,15 +3116,22 @@ function processInner(entries, fname, consoleMeta = {}) {
       meta.system = new TextDecoder().decode(data);
     }
   }
-  if (!dbBuf) throw new Error('no db.gz found inside backup');
-  const dbRaw = tolerantGunzip(dbBuf);
-  const collections = parseArchive(dbRaw);
+  if (meta.format?.startsWith('postgres') && meta.format !== 'postgres_v1') {
+    throw new Error(`unsupported backup format: ${meta.format}`);
+  }
+  if (meta.format === 'postgres_v1' && !postgresBuf && !rawDb) {
+    throw new Error('PostgreSQL backup is missing db-config.jsonl.gz');
+  }
+  if (!dbBuf && !postgresBuf && !rawDb) throw new Error('no supported Network database found (db.gz or db-config.jsonl.gz)');
+  const decoded = decodeDatabase(rawDb || tolerantGunzip(postgresBuf || dbBuf), postgresBuf ? 'postgres_v1' : meta.format);
+  meta.databaseFormat = decoded.databaseFormat;
+  const { collections, viewCollections } = decoded;
   let statCollections = new Map();
   if (statBuf) {
     try { statCollections = parseArchive(tolerantGunzip(statBuf)); } catch {}
   }
-  status(`${collections.size} collections loaded`, 'ok');
-  render({ meta, fname, collections, statCollections, consoleMeta });
+  render({ meta, fname, collections, viewCollections, statCollections, consoleMeta });
+  status(`${collections.size} ${viewCollections ? 'tables' : 'collections'} loaded`, 'ok');
 }
 
 // ─── Render helpers ──────────────────────────────────────────────────────
@@ -2979,8 +3139,8 @@ let CURRENT = null;
 let SEARCH = '';
 
 function getCollection(data, name) {
-  for (const [, c] of data.collections) if (c.name === name) return c.docs;
-  return [];
+  const source = data.viewCollections || data.collections;
+  return [...source.values()].filter(c => c.name === name).flatMap(c => c.docs);
 }
 function field(label, value, opts = {}) {
   if (value === null || value === undefined || value === '' ||
@@ -3011,7 +3171,7 @@ function resolvePortProfile(id, data) {
   return p ? p.name : id;
 }
 function detailsRaw(doc) {
-  return `<details class="deep"><summary>Raw BSON document</summary><div><pre class="raw">${esc(JSON.stringify(doc, null, 2))}</pre></div></details>`;
+  return `<details class="deep"><summary>Source document</summary><div><pre class="raw">${esc(JSON.stringify(SOURCE_DOCUMENTS.get(doc) || doc, null, 2))}</pre></div></details>`;
 }
 
 // Renders every field on a doc as a flat list, optionally skipping ones
@@ -3058,7 +3218,7 @@ function renderOverview(data) {
   const devices = getCollection(data, 'device');
   const clients = getCollection(data, 'user');
   const admins = getCollection(data, 'admin');
-  const fwRules = getCollection(data, 'firewallrule');
+  const fwRules = [...getCollection(data, 'firewallrule'), ...getCollection(data, 'firewall_policy')];
   const portConfs = getCollection(data, 'portconf');
   const ICONS = {
     sites:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
@@ -3725,9 +3885,10 @@ const DEVICE_LABELS = {
 function renderDevices(data) {
   const devices = getCollection(data, 'device');
   if (!devices.length) return `<div class="empty">No devices found.</div>`;
-  const groups = {};
-  for (const d of devices) { const t = d.type || 'other'; (groups[t] = groups[t] || []).push(d); }
+  const groups = Object.create(null);
+  for (const d of devices) { const t = String(d.type || 'other').toLowerCase(); (groups[t] = groups[t] || []).push(d); }
   const order = ['udm','uxg','ugw','usw','uap','ubb','uph','other'];
+  order.push(...Object.keys(groups).filter(t => !order.includes(t)).sort());
   let out = '';
   for (const t of order) {
     if (!groups[t]) continue;
@@ -4516,7 +4677,7 @@ function renderAdminCard(a, data) {
         ${a.is_super ? chip('super admin', 'brand') : ''}
         ${a.email_alert_enabled ? chip('alerts on', 'green') : ''}
         ${a.sso_account ? chip('SSO', 'blue') : ''}
-        ${a.two_factor_auth_enabled ? chip('2FA', 'green') : chip('no 2FA', 'red')}
+        ${a.two_factor_auth_enabled == null ? chip('2FA status not recorded') : (a.two_factor_auth_enabled ? chip('2FA', 'green') : chip('no 2FA', 'red'))}
       </h3>
       <div class="sub">${esc(a._id || '')}</div>
 
@@ -4554,6 +4715,34 @@ function renderAdminCard(a, data) {
   `;
 }
 
+function firewallEndpointLabel(ep, data) {
+  if (!ep || typeof ep !== 'object') return 'any';
+  const zones = getCollection(data, 'firewall_zone');
+  const groups = getCollection(data, 'firewallgroup');
+  const list = v => v == null ? [] : (Array.isArray(v) ? v : [v]);
+  const group = id => {
+    const g = groups.find(x => x._id === id);
+    return g ? `${g.name} [${list(g.group_members).join(', ')}]` : `group ${id}`;
+  };
+  const parts = [];
+  if (ep.zone_id) parts.push(zones.find(x => x._id === ep.zone_id)?.name || ep.zone_id);
+  const addresses = [];
+  if (ep.network_ids) addresses.push(list(ep.network_ids).map(id => resolveNetwork(id, data)).join(', '));
+  if (ep.ips) addresses.push(list(ep.ips).join(', '));
+  if (ep.ip_group_id) addresses.push(group(ep.ip_group_id));
+  if (ep.object_ids) addresses.push(list(ep.object_ids).map(group).join(', '));
+  if (ep.mac && ep.match_mac !== false) addresses.push(`MAC ${ep.mac}`);
+  if (ep.app_ids?.length) addresses.push(`apps ${list(ep.app_ids).join(', ')}`);
+  if (addresses.filter(Boolean).length) parts.push(`${ep.match_opposite_ips ? 'except ' : ''}${addresses.filter(Boolean).join(' · ')}`);
+  else if (ep.matching_target && ep.matching_target !== 'ANY') parts.push(`${ep.matching_target} selector`);
+  const ports = [];
+  if (ep.port != null && ep.port !== '') ports.push(String(ep.port));
+  if (ep.ports) ports.push(list(ep.ports).join(', '));
+  if (ep.port_group_id) ports.push(group(ep.port_group_id));
+  if (ports.filter(Boolean).length) parts.push(`${ep.match_opposite_ports ? 'except ' : ''}ports ${ports.filter(Boolean).join(' · ')}`);
+  return parts.join(' · ') || 'any';
+}
+
 // ─── Firewall (zones + policies + legacy rules + groups + NAT + traffic + QoS) ──
 function renderFirewall(data) {
   const zones      = getCollection(data, 'firewall_zone');
@@ -4567,7 +4756,7 @@ function renderFirewall(data) {
   const trafficRt  = getCollection(data, 'traffic_route');
   const qosRules   = getCollection(data, 'qos_rule');
 
-  const total = zones.length + policies.length + rules.length + groups.length +
+  const total = zones.length + policies.length + predefRules.length + rules.length + groups.length +
                 natRules.length + portFwds.length + trafficR.length + trafficRt.length + qosRules.length;
   if (!total) return `<div class="empty">No firewall config found.</div>`;
 
@@ -4586,7 +4775,10 @@ function renderFirewall(data) {
         </tr></thead>
         <tbody>
           ${zones.map(z => {
-            const nets = Array.isArray(z.network_ids) ? z.network_ids : (Array.isArray(z.networks) ? z.networks : []);
+            const nets = [...new Set([
+              ...(Array.isArray(z.network_ids) ? z.network_ids : (Array.isArray(z.networks) ? z.networks : [])),
+              ...getCollection(data, 'networkconf').filter(n => n.firewall_zone_id === z._id).map(n => n._id),
+            ])];
             const netLabels = nets.map(id => {
               const n = getCollection(data, 'networkconf').find(x => x._id === id);
               return n ? n.name : id;
@@ -4607,26 +4799,7 @@ function renderFirewall(data) {
 
   // ── Zone-based policies matrix ──
   if (policies.length) {
-    const zoneName = id => {
-      const z = zones.find(x => x._id === id);
-      return z ? z.name : (id || '');
-    };
-    const endpointLabel = ep => {
-      if (!ep || typeof ep !== 'object') return 'any';
-      const parts = [];
-      if (ep.zone_id) parts.push(zoneName(ep.zone_id));
-      if (ep.network_ids && ep.network_ids.length) {
-        parts.push(ep.network_ids.map(id => {
-          const n = getCollection(data, 'networkconf').find(x => x._id === id);
-          return n ? n.name : id;
-        }).join(', '));
-      }
-      if (ep.ips && ep.ips.length) parts.push(ep.ips.join(', '));
-      if (ep.object_ids && ep.object_ids.length) parts.push(`${ep.object_ids.length} obj`);
-      if (ep.port_group_id) parts.push(`port group`);
-      if (ep.ports && ep.ports.length) parts.push(`:${ep.ports.join(',')}`);
-      return parts.filter(Boolean).join(' · ') || 'any';
-    };
+    const endpointLabel = ep => firewallEndpointLabel(ep, data);
 
     out += `<div class="cred-table-wrap" style="margin-bottom: 20px;">
       <div class="matrix-head">Zone-based firewall policies <span class="card-section-count">${policies.length}</span></div>
@@ -4881,10 +5054,10 @@ function renderFirewall(data) {
           <tbody>
             ${predefRules.slice(0, 200).map(p => `
               <tr>
-                <td class="ssid" style="font-size: 12px;">${esc(p.name || p.key || '—')}</td>
+                <td class="ssid" style="font-size: 12px;">${esc(p.name || p.key || p.type || '—')}</td>
                 <td style="font-size: 12px;">${esc(p.direction || p.ruleset || '—')}</td>
                 <td>${p.action ? chip(p.action, p.action === 'ALLOW' || p.action === 'accept' ? 'green' : 'red') : ''}</td>
-                <td>${p.enabled !== false ? chip('on', 'green') : chip('off', 'red')}</td>
+                <td>${p.enabled == null ? 'not recorded' : (p.enabled ? chip('on', 'green') : chip('off', 'red'))}</td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -5623,6 +5796,7 @@ function render(data) {
   rows.push(['Format', isUnifiOs ? '.unifi (UniFi OS)' : '.unf (Network)']);
   if (m.version) rows.push(['Controller', m.version]);
   if (m.format) rows.push(['Backup format', m.format]);
+  if (m.databaseFormat) rows.push(['Database', m.databaseFormat]);
   if (m.timestamp) rows.push(['Taken', fmtDate(m.timestamp)]);
   if (sites.length === 1) rows.push(['Site', sites[0].desc || sites[0].name]);
   else if (sites.length > 1) rows.push(['Sites', sites.length]);
@@ -5733,7 +5907,13 @@ function collectTabJSON(tabId) {
     case 'devices':  return get('device');
     case 'clients':  return get('user');
     case 'admins':   return get('admin');
-    case 'firewall': return { rules: get('firewallrule'), groups: get('firewallgroup') };
+    case 'firewall': return {
+      rules: get('firewallrule'), groups: get('firewallgroup'),
+      zones: get('firewall_zone'), policies: get('firewall_policy'),
+      predefinedRules: get('predefined_firewall_rule'), natRules: get('nat_rule'),
+      portForwards: get('portforward'), trafficRules: get('traffic_rule'),
+      trafficRoutes: get('traffic_route'), qosRules: get('qos_rule'),
+    };
     case 'portconf': return get('portconf');
     case 'settings': return get('setting');
     case 'overview': {
