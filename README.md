@@ -1,6 +1,6 @@
 # UniFi Backup Reader
 
-**Version 1.1.0 | Access edition**
+**Version 1.1.1 | Access edition**
 
 A self-contained, read-only browser application for inspecting supported UniFi PostgreSQL and legacy BSON backups. Open `index.html`, select a backup and browse its saved networks, Wi-Fi settings, devices, ports, clients, firewall rules and services.
 
@@ -10,7 +10,7 @@ Backup processing runs locally in the browser. The application does not connect 
 
 ## Supported inputs
 
-Version 1.1.0 reads **PostgreSQL (`postgres_v1`) and legacy BSON Network data** inside supported backup containers:
+Version 1.1.1 reads **PostgreSQL (`postgres_v1`) and legacy BSON Network data** inside supported backup containers:
 
 | Input | Support |
 | --- | --- |
@@ -65,6 +65,8 @@ Opening another backup replaces the current data only after the new file has bee
 
 Technical labels use established casing, including DHCP, DNS, DMZ, VLAN, RADIUS and WireGuard.
 
+Wi-Fi security protocol labels combine the recorded authentication type, WPA3 and transition-mode settings. In the supplied backups, UniFi can retain `wpa_mode: "wpa2"` while WPA3 is enabled. Version 1.1.1 uses the WPA3 flags to distinguish WPA3 Personal, WPA3 Enterprise, 192-bit Enterprise and WPA2/WPA3 transition mode. The raw stored WPA mode remains visible in record details with an explicit raw-field label. Missing transition information and conflicting flags are labelled rather than silently assumed. The same resolved protocol is used in tables, summaries, search and exports. A WPA3 flag on an Open record alone is not treated as proof of a WPA3 Personal or Enterprise network.
+
 ## Exports and protected information
 
 **Export view** downloads CSV or JSON for all matching rows across every page, using the current filters and displayed sort order. Exports include the backup filename, capture time and selected site. The Overview provides a network summary export. All tables exports contain every field in the matching decoded records, regardless of the columns currently selected for display, with recognised secrets redacted. Other views export their labelled inventory fields. Copy table follows the same row scope and field selection as its view export.
@@ -87,7 +89,7 @@ Peer reconstruction requires the client tunnel address, explicit client-side rou
 
 A profile exported by UniFi without a private-key value is insufficient on its own to reconstruct a working client configuration. This does not establish that every UniFi version or backup omits private keys.
 
-The reader also inspects supported nested UniFi Users credential archives. It can recognise protected WireGuard fields, but version 1.1.0 does **not** decrypt the protected credential values encountered in the validated backup. Those values are reported as unresolved rather than absent.
+The reader also inspects supported nested UniFi Users credential archives. It can recognise protected WireGuard fields, but version 1.1.1 does **not** decrypt the protected credential values encountered in the validated backup. Those values are reported as unresolved rather than absent.
 
 WireGuard configuration downloads and QR codes deliberately include available client private keys. Treat them as credentials. QR codes are generated inside the page without an external service.
 
@@ -105,7 +107,7 @@ Treat original backups as sensitive files. Successful decoding exposes saved con
 
 This version uses modern browser APIs, including module scripts, typed arrays, local Blob URLs and Web Workers. Clipboard availability depends on the browser and execution context, with a fallback copy method provided.
 
-Release validation comprises 82 checks performed in Chromium and the standalone decoder runtime against a real PostgreSQL backup from Network 11.0.97, two real BSON console backups from Network 10.6.106, and generated fixtures. The real legacy files use UniFi collection-selection streams. The older mongodump archive layout is covered by generated fixtures rather than a real backup of that layout.
+Release validation comprises 91 checks performed in Chromium and the standalone decoder runtime against a real PostgreSQL backup from Network 11.0.97, two real BSON console backups from Network 10.6.106, and generated fixtures. The real legacy files use UniFi collection-selection streams. The older mongodump archive layout is covered by generated fixtures rather than a real backup of that layout.
 
 Checks cover parsing and record preservation, malformed inputs, views, sorting/export consistency, nested secret handling, QR decoding, clipboard copying, new record details, session handling and sidebar layout. No external requests were observed during the browser checks.
 Equivalent testing in Firefox, Safari and Edge has not been completed for this edition. No minimum browser versions or fixed parsing-speed guarantees are declared.
