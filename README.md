@@ -1,8 +1,8 @@
 # UniFi Backup Reader
 
-**Version 1.1.2 | Access edition**
+**Version 1.2.0 | Access edition**
 
-A self-contained, read-only browser application for inspecting supported UniFi PostgreSQL and legacy BSON backups. Open `index.html`, select a backup and browse its saved networks, Wi-Fi settings, devices, ports, clients, firewall rules and services.
+A self-contained, read-only browser application for inspecting supported UniFi PostgreSQL and legacy BSON backups. Open `index.html`, select a backup and browse its saved networks, Wi-Fi settings, devices, ports, clients, CyberSecure controls, policies and services.
 
 This edition uses the Access visual design, including the approved fox logo and sidebar layout from Device Access. It is adapted from the original UniFi Backup Reader by [AyeTech](https://ayetech.au).
 
@@ -10,7 +10,7 @@ Backup processing runs locally in the browser. The application does not connect 
 
 ## Supported inputs
 
-Version 1.1.2 reads **PostgreSQL (`postgres_v1`) and legacy BSON Network data** inside supported backup containers:
+Version 1.2.0 reads **PostgreSQL (`postgres_v1`) and legacy BSON Network data** inside supported backup containers:
 
 | Input | Support |
 | --- | --- |
@@ -43,12 +43,15 @@ Opening another backup replaces the current data only after the new file has bee
 | Section | Information available when recorded in the backup |
 | --- | --- |
 | Overview | Site-scoped network counts, local network summary and backup information |
-| Networks | Local networks, VLANs, subnets, gateways, DHCP ranges, DNS settings, internet definitions and static DNS records |
+| Networks | Local networks, VLANs, subnets, gateways, DHCP ranges, DNS settings and static DNS records |
+| Internet | WAN definitions, recorded addressing, VLAN tagging, PPPoE and failover settings |
 | Wi-Fi | SSIDs, security settings, network associations, bands and individually protected credentials |
 | Devices | Device inventory, port profiles, effective port configuration, recorded radio and interface details, LLDP neighbours and SSID broadcasts when present |
 | Clients | Recorded clients and DHCP reservations |
-| Firewall | Zone-based user policies, zones, address and port groups, port forwards, switch rules, NAT rules, separate system rule definitions and legacy rules |
-| VPN & Services | VPN networks and peers, recorded VPN sessions, traffic and static routes, dynamic DNS, encrypted DNS, DHCP options, RADIUS, filtering, schedules and device supervision |
+| Policy Engine | Zone-based user policies, zones, address and port objects, port forwards, switch rules, NAT rules, legacy rules, traffic routes and the routing table |
+| VPN | VPN networks and peers, protected private keys, recoverable saved client configurations and recorded VPN sessions |
+| CyberSecure | Threat Management, Content Filtering and Traffic Logging settings |
+| Services | Dynamic DNS, DHCP options, RADIUS, schedules and device supervision |
 | System | Settings, administrators, sites, console/application metadata, archive inventory, All tables and Coverage |
 
 - **Table sorting:** select a sortable column heading to change its order. VLANs sort numerically, with untagged entries first in ascending order. Untagged is not automatically relabelled as VLAN 1.
@@ -57,15 +60,32 @@ Opening another backup replaces the current data only after the new file has bee
 - **Wi-Fi details:** include recorded roaming/FT options, WPA3 transition, MAC filtering, minimum rates, DTIM, multicast, MLO and private pre-shared-key mappings.
 - **Network details:** include recorded IPv6, router advertisements, prefix delegation, DHCPv6, DHCP boot settings, WAN addressing/VLAN settings and protected PPPoE credentials.
 - **Port configuration:** combines recorded settings, profile inheritance and explicit overrides. Expanded details include 802.1X, port security, STP, storm control, voice VLAN, negotiation, aggregation, PoE and SFP measurements when recorded. Unresolved profiles or network references are labelled as incomplete.
-- **Coverage:** distinguishes supported views, tables outside those views, empty tables and information not included in the backup. Select a decoded table to open it in All tables. Selected operator views are not a complete interpretation of every UniFi feature.
-- **All tables:** browse every decoded Network or statistics table with site filtering, search, pagination, selectable columns and sorting. Open records for additional fields. Empty tables remain selectable.
+- **Coverage:** distinguishes supported views, tables outside those views, empty tables and information not included in the backup. Select a populated decoded table to open it in All tables. Empty and omitted tables remain documented in Coverage. Selected operator views are not a complete interpretation of every UniFi feature.
+- **All tables:** browse populated decoded Network or statistics tables with site filtering, search, pagination, selectable columns and sorting. Open records for additional fields. Tables with no records for the selected site are hidden from the picker, and a valid populated replacement is selected if a site change empties the current table. Search does not remove table choices.
 - **Console & applications:** inspect recorded application versions, console metadata, included application folders and archive member names, sizes and roles. Archive inventory does not expose raw file contents.
-- **System firewall rules:** inspect recorded UniFi rule definitions separately from user policies. A definition in the backup is not proof that it was active.
+- **Populated views:** tabs with no records for the selected site are hidden. Coverage remains available to explain missing and empty data.
+- **Generated system rules:** the dedicated System rules view has been removed. Saved definitions remain available as masked raw records in All tables and are labelled **Raw definitions only** in Coverage. They are not presented as interpreted or active firewall policy.
 - **Responsive navigation:** supports desktop and narrow screens, with keyboard focus handling for record drawers and export dialogues.
 
 Technical labels use established casing, including DHCP, DNS, DMZ, VLAN, RADIUS and WireGuard. Empty lists display as **None**, while missing values display as **Not recorded**. Feature-specific labels such as **Disabled** are retained where appropriate. This applies to operator tables, record details and readable copies or CSV exports. Advanced troubleshooting data and All tables JSON exports retain the original array structure.
 
-Wi-Fi security protocol labels combine the recorded authentication type, WPA3 and transition-mode settings. In the supplied backups, UniFi can retain `wpa_mode: "wpa2"` while WPA3 is enabled. Version 1.1.2 uses the WPA3 flags to distinguish WPA3 Personal, WPA3 Enterprise, 192-bit Enterprise and WPA2/WPA3 transition mode. The raw stored WPA mode remains visible in record details with an explicit raw-field label. Missing transition information and conflicting flags are labelled rather than silently assumed. The same resolved protocol is used in tables, summaries, search and exports. A WPA3 flag on an Open record alone is not treated as proof of a WPA3 Personal or Enterprise network.
+Wi-Fi security protocol labels combine the recorded authentication type, WPA3 and transition-mode settings. In the supplied backups, UniFi can retain `wpa_mode: "wpa2"` while WPA3 is enabled. Version 1.2.0 uses the WPA3 flags to distinguish WPA3 Personal, WPA3 Enterprise, 192-bit Enterprise and WPA2/WPA3 transition mode. The raw stored WPA mode remains visible in record details with an explicit raw-field label. Missing transition information and conflicting flags are labelled rather than silently assumed. The same resolved protocol is used in tables, summaries, search and exports. A WPA3 flag on an Open record alone is not treated as proof of a WPA3 Personal or Enterprise network.
+
+## CyberSecure
+
+The CyberSecure section groups the saved controls using the main categories in UniFi. Core control settings appear before individual policies in the default table order. Open a row for its recorded fields and resolved network references.
+
+| View | Recorded settings shown |
+| --- | --- |
+| Threat Management | IDS/IPS detection mode, selected networks, saved signature categories, memory optimisation, honeypots, region blocking, device/traffic identification, encrypted DNS, TLS inspection, populated detection suppressions and application policies |
+| Content Filtering | Named policies, selected networks and clients, category selections, Safe Search, allowed/blocked domains, schedules, global block-page settings and legacy DNS/ad-blocking settings when present |
+| Traffic Logging | Traffic logging selections, activity logging destination and flags, NetFlow/IPFIX collector and sampling settings, fabric system logging, and policies with saved logging or flow-reporting flags |
+
+Region blocking distinguishes an **allow list** from a **block list** and resolves saved `ingress` and `egress` directions to **Incoming** and **Outgoing**. Selected countries are displayed by name and code. The same interpretation is used in details, search, copied tables and CSV/JSON view exports. A saved allow list is not described as a list of blocked countries.
+
+Saved IDS mode displays **Notify (IDS)** and saved IPS mode displays **Notify and block (IPS)**. Disabled controls remain visibly disabled even when saved options are present. Missing or unfamiliar modes are not silently treated as active protection. Raw custom DNS stamps are protected as individual secrets.
+
+These views show saved configuration. They do not reproduce live signature totals, detection counters, traffic/event logs, subscription status or an overall protection score. The DNS provider catalogue remains supporting raw data rather than being shown as a list of active providers. Empty groups are not added merely to mirror the live UniFi menu.
 
 ## Exports and protected information
 
@@ -89,7 +109,7 @@ Peer reconstruction requires the client tunnel address, explicit client-side rou
 
 A profile exported by UniFi without a private-key value is insufficient on its own to reconstruct a working client configuration. This does not establish that every UniFi version or backup omits private keys.
 
-The reader also inspects supported nested UniFi Users credential archives. It can recognise protected WireGuard fields, but version 1.1.2 does **not** decrypt the protected credential values encountered in the validated backup. Those values are reported as unresolved rather than absent.
+The reader also inspects supported nested UniFi Users credential archives. It can recognise protected WireGuard fields, but version 1.2.0 does **not** decrypt the protected credential values encountered in the validated backup. Those values are reported as unresolved rather than absent.
 
 WireGuard configuration downloads and QR codes deliberately include available client private keys. Treat them as credentials. QR codes are generated inside the page without an external service.
 
@@ -107,9 +127,9 @@ Treat original backups as sensitive files. Successful decoding exposes saved con
 
 This version uses modern browser APIs, including module scripts, typed arrays, local Blob URLs and Web Workers. Clipboard availability depends on the browser and execution context, with a fallback copy method provided.
 
-Release validation comprises 91 checks performed in Chromium and the standalone decoder runtime against a real PostgreSQL backup from Network 11.0.97, two real BSON console backups from Network 10.6.106, and generated fixtures. The real legacy files use UniFi collection-selection streams. The older mongodump archive layout is covered by generated fixtures rather than a real backup of that layout.
+Release validation comprises 126 checks performed in Chromium and the standalone decoder runtime against two real PostgreSQL backups from Network 11.0.97, two real BSON console backups from Network 10.6.106, and generated PostgreSQL/BSON fixtures. The latest PostgreSQL backup includes an enabled inbound country allow list. CyberSecure interpretation, hidden empty tables and removal of the System rules view were checked against both real backup formats. Generated fixtures additionally exercise enabled allow lists, alternative control states, site changes, and protected DNS values in both formats. The real legacy files use UniFi collection-selection streams. The older mongodump archive layout is covered by generated fixtures rather than a real backup of that layout.
 
-Checks cover parsing and record preservation, malformed inputs, views, sorting/export consistency, nested secret handling, QR decoding, clipboard copying, new record details, session handling and sidebar layout. No external requests were observed during the browser checks.
+Checks cover parsing and record preservation, malformed inputs, views, sorting/export consistency, nested secret handling, QR decoding, clipboard copying, record details, country action/direction consistency, CyberSecure controls, site-scoped table choices, session handling and sidebar layout. No external requests were observed during the browser checks.
 Equivalent testing in Firefox, Safari and Edge has not been completed for this edition. No minimum browser versions or fixed parsing-speed guarantees are declared.
 
 ## Hosting
