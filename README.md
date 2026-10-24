@@ -1,201 +1,145 @@
 # UniFi Backup Reader
 
-A single-file browser tool that decodes UniFi Network (`.unf`) and UniFi OS console (`.unifi`) backups locally and renders them as a clean, searchable, copy-friendly settings page. Built by [AyeTech](https://ayetech.au).
+**Version 1.0.0 | Access edition**
 
-Designed for the moment an engineer needs to recreate a config on a fresh controller, recover a lost Wi-Fi password from a backup, or just inspect what's actually saved in a UniFi backup file. Everything runs in your browser — no data ever leaves the page.
+A self-contained, read-only browser application for inspecting supported UniFi PostgreSQL backups. Open `index.html`, select a backup and browse its saved networks, Wi-Fi settings, devices, ports, clients, firewall rules and services.
 
-**Try it now:** [ayetech.au/tools/unifibackupreader/](https://ayetech.au/tools/unifibackupreader/) — current build, hosted by AyeTech. Same single-file tool; your backup is still parsed entirely client-side. If you'd rather not trust a hosted copy, download `index.html` from this repo and open it directly.
+This edition uses the Access visual design, including the approved fox logo and sidebar layout from Device Access. It is adapted from the original UniFi Backup Reader by [AyeTech](https://ayetech.au).
 
-## Features
+Backup processing runs locally in the browser. The application does not connect to your controller or show live network status.
 
-- **Reads both UniFi backup formats** — encrypted `.unf` (UniFi Network application) and `.unifi` (UniFi OS console wrapper). Drop a file, get a page.
-- **Wi-Fi credentials matrix** — every SSID, password, security mode and VLAN binding. Click to reveal, click again to copy. Bulk TSV export.
-- **Networks-at-a-glance matrix** — every VLAN with subnet, gateway, DHCP range and DNS in one scannable table.
-- **DHCP reservations** — every fixed-IP client with MAC, IP, network and local-DNS record, one-click copy.
-- **Per-device Port Manager** — unified table merging `port_table`, `port_overrides` and `ethernet_table`. Expand any row to see every per-port setting (PoE mode/class/watts, VLAN, storm control, 802.1X, STP, LLDP, SFP info, counters).
-- **Full firewall coverage** — zone-based policies (9.x+), legacy rules, NAT, port forwards, traffic rules, traffic routes, QoS, firewall groups, predefined system rules.
-- **Services tab** — RADIUS profiles + local users (with revealable secrets), schedule tasks, dynamic DNS, DNS-over-HTTPS, DHCP option profiles, WireGuard VPN users, hotspot operators/packages/vouchers, content filtering, SSL inspection.
-- **Console metadata for `.unifi` files** — hostname, platform, firmware, paired UI.com devices, installed apps, app versions.
-- **Universal copy ergonomics** — click any field value to copy, every card has a "copy all" button, every tab has bulk-export buttons (TSV/JSON).
-- **Reveal-all toggle** — flip every masked secret in the current tab in one click.
-- **Full JSON export** — entire backup as pretty-printed JSON, plus per-collection JSON copy/download.
-- **Fully offline, zero outbound requests** — single HTML file (~490 KB) with fflate, aes-js, and all webfonts bundled in. Open it on a plane, on an air-gapped jump host, wherever. Nothing is fetched at runtime.
-- **No telemetry** — your backup is parsed entirely in your tab. Nothing is uploaded.
+## Supported inputs
 
-## Usage
+Version 1.0.0 reads **PostgreSQL (`postgres_v1`) Network data** inside the following supported containers:
 
-Two ways to run it:
+| Input | Support |
+| --- | --- |
+| `.unifi` | Supported encrypted UniFi OS console backups containing PostgreSQL Network dumps |
+| `.unf` | Supported encrypted UniFi Network backups containing PostgreSQL dumps |
+| `.zip` | Extracted backup archives containing `db-*.jsonl` or `db-*.jsonl.gz` dumps |
+| `.jsonl` | UniFi PostgreSQL JSONL export streams |
+| `.gz` | Gzip-compressed PostgreSQL JSONL streams or supported backup TAR archives |
 
-- **Hosted by AyeTech** — open [ayetech.au/tools/unifibackupreader/](https://ayetech.au/tools/unifibackupreader/) and skip step 1.
-- **Local file** — download `index.html` from this repo, double-click to open in your browser. No install, no server, no internet needed after the download.
+**Legacy MongoDB/BSON backups, including `db.gz` BSON payloads, are not supported.** A `.unf` or `.unifi` extension alone does not establish compatibility. The payload must use the supported PostgreSQL format.
 
-Either way:
+Use the original database filename, such as `db-config.jsonl.gz`, where possible. If a standalone JSONL file has been renamed and its database cannot be identified, the application asks whether it contains Network configuration or another database. Other databases are listed in Coverage without being presented as an empty network.
 
-1. Open the page.
-2. Drag a `.unf` or `.unifi` file onto the drop zone, or click to pick.
-3. Browse the tabs, expand the sections, copy what you need.
+The input file limit is **512 MiB**. Archive and decoded-data limits also apply. Browser memory may impose a lower practical limit.
 
-The tool never asks for a server, network connection, login, or permission. The first thing the browser does after loading the HTML is sit and wait for a file. The second thing it does — when you drop one — is parse it locally. There is no third thing.
+## Use the reader
 
-## Browser support
+1. Download this repository's `index.html` and open it in your browser. No package installation, build step or local web server is required.
+2. Choose **Open backup**, use the welcome screen's file picker, or drop a file onto the upload area.
+3. Confirm the backup filename, capture time and selected site shown above the content.
+4. Choose a section from the navigation. Search and filter the current view, then open a record for details and related items.
+5. Reveal individual secrets only when needed. Use the available copy controls or **Export view** to save information.
+6. Choose **Clear session** when finished.
 
-Tested on current Chrome, Edge, Firefox, and Safari. The bar is roughly:
+Opening another backup replaces the current data only after the new file has been successfully decoded and, where required, identified. Failed or cancelled opening retains the current backup.
 
-| Browser | Minimum |
-|---|---|
-| Chrome / Edge | 89+ |
-| Firefox | 89+ |
-| Safari | 15+ |
+## Views and controls
 
-The script is loaded as `<script type="module">`, which rules out IE and very old mobile browsers. Everything else the tool uses — `FileReader`, `TextEncoder`, `TextDecoder`, typed arrays, async/await, Clipboard API — is available everywhere a module script can run.
+| Section | Information available when recorded in the backup |
+| --- | --- |
+| Overview | Site-scoped network counts, local network summary and backup information |
+| Networks | Local networks, VLANs, subnets, gateways, DHCP ranges, DNS settings, internet definitions and static DNS records |
+| Wi-Fi | SSIDs, security settings, network associations, bands and individually protected credentials |
+| Devices | Device inventory, port profiles, effective port configuration and recorded radio or interface details |
+| Clients | Recorded clients and DHCP reservations |
+| Firewall | Zone-based policies, zones, address and port groups, port forwards, switch rules and NAT rules |
+| VPN & Services | VPN networks and peers, recorded VPN sessions, traffic and static routes, dynamic DNS, encrypted DNS, DHCP options, RADIUS, filtering, schedules and device supervision |
+| System | Supported settings, additional settings, administrators, sites and Coverage |
 
-Performance is fine for typical backups (`.unif` files in the 1–20 MB range parse in under a second on a laptop). Very large backups — a long-lived controller with thousands of clients and a deep stats history — can push the BSON parser into the multi-second range. Everything happens on the main thread; no Web Worker, no WASM. If you hit a slow file, just wait it out.
+- **Table sorting:** select a sortable column heading to change its order. VLANs sort numerically, with untagged entries first in ascending order. Untagged is not automatically relabelled as VLAN 1.
+- **Site and view filters:** counts and exports follow the selected site and applicable filters. Firewall policies also support source and destination zone filters.
+- **Record details:** inspect saved fields, related records and masked troubleshooting data. Device port and radio details are independent of the parent inventory's search and status filters.
+- **Port configuration:** combines recorded settings, profile inheritance and explicit overrides. Unresolved profiles or network references are labelled as incomplete.
+- **Coverage:** distinguishes supported views, tables outside those views, empty tables and information not included in the backup. Selected views are not a complete interpretation of every UniFi feature.
+- **Responsive navigation:** supports desktop and narrow screens, with keyboard focus handling for record drawers and export dialogues.
 
-## Deploy your own copy
+Technical labels use established casing, including DHCP, DNS, DMZ, VLAN, RADIUS and WireGuard.
 
-Want it hosted on your own domain instead of opening a local file? One click puts a private copy on Cloudflare's edge, free, with no backend:
+## Exports and protected information
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ShaunLeslie/unifi-backup-reader)
+**Export view** downloads CSV or JSON for all matching rows across every page, using the current filters and displayed sort order. Exports include the backup filename, capture time and selected site. The Overview provides a network summary export.
 
-The repo ships a minimal `wrangler.jsonc` that serves `index.html` as a static asset — no build step, no secrets, no telemetry added. To deploy from your own machine instead:
+Recognised secret fields are redacted from ordinary view exports, copied record summaries and troubleshooting data. Individual secret fields have separate reveal and copy controls. Revealed values are remasked when the view or record changes, an export dialogue opens, or the browser tab becomes hidden.
 
-```bash
-npm i -g wrangler
-wrangler login
-wrangler deploy
-```
+Redaction depends on recognised fields and configuration patterns. Check exported material before sharing it. This version does not provide a reveal-all control, TSV export or a full decoded-backup download.
 
-Where to grab a backup:
+### WireGuard
 
-- **Cloud archive**: visit [account.ui.com/backups](https://account.ui.com/backups), open the console you want, download the latest backup (`.unifi`).
-- **Controller UI**: open the UniFi Network web UI → *Settings → System → Backups → Download Backup* (`.unf`).
+Private keys are protected data points and can be revealed when a usable value is available.
 
-## How it works
+| Record type | Configuration download and QR behaviour |
+| --- | --- |
+| Gateway acting as a VPN client | A complete, valid saved client configuration can be downloaded as `.conf` and encoded as a QR code when its settings are compatible with QR import |
+| Remote VPN peer | Recovery is enabled only when a complete saved configuration or sufficient peer and server settings are available, including a client private key that matches the recorded public key |
+| WireGuard server | Its recorded private key can be inspected separately. The server private key is not substituted for a client's private key |
 
-The pipeline from "binary file you dropped" to "settings page you can read" runs entirely client-side in three stages — decrypt, decompress, parse — repeated across nested layers because UniFi backups are multi-layer containers.
+Peer reconstruction requires the client tunnel address, explicit client-side routes, server public key and endpoint, and a known pre-shared-key setting. Server-side peer `allowed_ips` are not treated as the client's routing policy. Incomplete data leaves the QR and download controls disabled with an explanation. The reader does not generate replacement identities or invent routing defaults.
 
-```
-.unifi  →  AES-256-CBC decrypt (IV = first 16 bytes, key = embedded)
-        →  gunzip
-        →  tar extraction
-        →  picks `backup/network/db.gz` (the UniFi Network app's data)
+A profile exported by UniFi without a private-key value is insufficient on its own to reconstruct a working client configuration. This does not establish that every UniFi version or backup omits private keys.
 
-.unf    →  AES-128-CBC decrypt (hardcoded key + IV)
-        →  unzip
-        →  picks `db.gz`
+The reader also inspects supported nested UniFi Users credential archives. It can recognise protected WireGuard fields, but version 1.0.0 does **not** decrypt the protected credential values encountered in the validated backup. Those values are reported as unresolved rather than absent.
 
-db.gz   →  gunzip
-        →  BSON stream parsed in two formats:
-             • old mongodump archive (pre-10.x, magic 0x8199e26d)
-             • new `__cmd: "select"` stream (UniFi Network 10.x+)
-        →  collections grouped, rendered
-```
+WireGuard configuration downloads and QR codes deliberately include available client private keys. Treat them as credentials. QR codes are generated inside the page without an external service.
 
-### Stage 1: Decrypt
+## Local processing and privacy
 
-Both formats are encrypted at rest using AES-CBC. The keys are static and have been publicly known for years, which makes the encryption a deterrent against casual snooping rather than a real secret — anyone with a backup file and this tool (or the equivalent Python utility) can decrypt it. UniFi's design assumes the backup is treated as a sensitive artifact by *you*, not protected by the file format.
+- Scripts, styles, icons and required libraries are embedded in `index.html`. The application uses system fonts and does not fetch webfonts.
+- The page contains no analytics or telemetry. Its Content Security Policy blocks network connections and external resources.
+- The reader does not save uploaded backups to browser storage. Data is held for the active session until it is replaced, cleared or the page is closed.
+- Downloads and clipboard copies are explicit user actions. Clearing the session does not remove files already downloaded or clear your clipboard.
+- Decoding uses a local Web Worker when available, with a main-thread fallback where worker creation is unavailable.
 
-- **.unf** uses AES-128-CBC with a 16-byte key (`bcyangkmluohmars`) and a 16-byte IV (`ubntenterpriseap`), both hardcoded. The same key/IV pair has shipped from UniFi Network 5.x through 10.x.
-- **.unifi** uses AES-256-CBC with a per-file random IV (the first 16 bytes of the file) and a 32-byte key embedded in UniFi OS firmware. Slightly stronger than `.unf` because the IV varies per backup, but the key is still static and trivially recoverable from any UniFi OS image.
+Treat original backups as sensitive files. Successful decoding exposes saved configuration and may expose credentials through explicit reveal controls.
 
-The AES routines come from the bundled [aes-js](https://github.com/ricmoo/aes-js). NoPadding is applied — both backups are produced by UniFi's exporters with block-aligned payloads.
+## Browser compatibility and validation
 
-### Stage 2: Decompress and unwrap
+This version uses modern browser APIs, including module scripts, typed arrays, local Blob URLs and Web Workers. Clipboard availability depends on the browser and execution context, with a fallback copy method provided.
 
-Decrypted output is a container, not data. Opening it differs by format:
+Release validation was performed in Chromium using a real UniFi OS PostgreSQL backup from Network 11.0.97 and generated fixtures for supported input formats and complete peer configurations. The 54 checks covered parsing, views, sorting and export consistency, secret handling, QR decoding, missing-data behaviour, session handling and sidebar layout. No external requests were observed during those checks.
 
-- **.unf** decrypts to a standard ZIP archive. The file we want is `db.gz`. Other entries (`db_stat.gz`, `version`, `format`, `timestamp`, `system.properties`) feed the file-info sidebar shown after a successful load.
-- **.unifi** decrypts to a gzipped TAR file (Unix tarball, gzipped). After ungzipping, the TAR is walked entry by entry. `backup/network/db.gz` is what becomes the Network tabs; the sibling folders (`backup/ucore/`, `backup/uos/`, `backup/users/`, `backup/innerspace/`) plus a few top-level JSON files describe the console hardware, paired UI.com devices, and installed apps — those populate the *Console* tab.
+Equivalent testing in Firefox, Safari and Edge has not been completed for this edition. No minimum browser versions or fixed parsing-speed guarantees are declared.
 
-Gzip and ZIP handling come from the bundled [fflate](https://github.com/101arrowz/fflate). TAR extraction is implemented directly in `index.html` (TAR is a simple format — 512-byte headers with octal-encoded sizes, no compression of its own).
+## Hosting
 
-### Stage 3: Parse BSON, group collections
+Serve `index.html` as a static file if you prefer a hosted copy. The application needs no backend, controller credentials or server-side parser. Local-file use remains available without hosting.
 
-The inner `db.gz` ungzips to a MongoDB dump, but the wire format depends on when UniFi Network last touched the backup:
+The upstream AyeTech-hosted reader is a separate build and should not be assumed to contain this edition's changes. This README does not establish or configure a deployment for this repository.
 
-- **Pre-Network 10.x** dumps are *mongodump archive* streams: a magic number (`0x8199e26d`), per-collection metadata, then a sequence of BSON documents. The reader walks the stream and groups documents by their parent collection as it goes.
-- **Network 10.x+** dumps use a newer stream where collection routing is inline — `__cmd: "select"` documents are inserted between batches to switch context. The reader interprets each command, then accumulates documents into whatever collection was most recently selected.
+## How decoding works
 
-The BSON parser is hand-written for this project (no `bson` dependency). It walks the binary, decodes the primitive types UniFi actually uses (string, int32, int64, double, boolean, datetime, ObjectId, embedded document, array, binary), and skips anything else gracefully.
+1. Identify the input container and decrypt supported encrypted backup formats locally using the bundled AES implementation.
+2. Unwrap supported ZIP, gzip and TAR layers, applying the implemented size and integrity checks.
+3. Parse Network PostgreSQL JSONL table definitions and row records. Decode typed export wrappers and expose dynamic fields while giving declared relational columns precedence.
+4. Resolve supported record references, including legacy ID mappings, and build the operator views.
+5. Read available archive metadata and inspect supported Users credential archives separately from the Network tables.
 
-After parsing, collections are mapped to the tabs you navigate: `wlanconf` and `setting` feed Wi-Fi, `networkconf` feeds Networks, `user` feeds DHCP reservations, `device` feeds Port Manager, `firewallrule`/`firewallgroup`/`portforward`/`routing`/`firewallzonepolicy`/etc. feed Firewall, `dpiapp`/`radiusprofile`/`schedule_task`/`dynamicdns`/`hotspotop`/etc. feed Services. Anything without a custom view still ships out via the full JSON export.
-
-## Format details
-
-### `.unf` (UniFi Network application backup)
-- AES-128-CBC, NoPadding
-- Static key `bcyangkmluohmars` / IV `ubntenterpriseap` (publicly documented since 5.x, identical through 10.x)
-- Decrypted content is a standard ZIP containing `db.gz`, `db_stat.gz`, `version`, `format`, `timestamp`, `system.properties`
-
-### `.unifi` (UniFi OS console backup)
-- AES-256-CBC, NoPadding
-- Per-file random IV stored as the first 16 bytes of the file
-- Static 32-byte key embedded in UniFi OS firmware
-- Decrypted content is a gzipped tar containing `backup/network/` (a `.unf`-equivalent payload), `backup/ucore/`, `backup/uos/`, `backup/users/`, `backup/innerspace/` and metadata JSON files
-
-## Auditing this build
-
-The whole tool ships as one HTML file with everything bundled. That keeps it portable, but also means you should be able to verify the bundle without trust.
-
-**Verify the page makes no outbound requests.** Open `index.html` in a browser, open DevTools → Network with "Preserve log" on, reload, then drop a backup. The Network panel should stay completely empty after the initial document load. If a request fires that you didn't expect, treat it as a regression and please open an issue.
-
-**Verify the bundled libraries match upstream.** Each third-party library lives in its own `<script>` block between the `<!-- ─── Bundled libraries ─── -->` marker and the main `<script type="module">`. The bodies are pasted in verbatim from the published npm tarballs. To check a build:
-
-```bash
-# Fetch upstream sources and hash them
-curl -sSL https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js | shasum -a 256
-curl -sSL https://cdn.jsdelivr.net/npm/aes-js@3.1.2/index.js | shasum -a 256
-
-# Extract the same bytes from index.html and hash them.
-# fflate UMD lives on a single line between the first <script>...</script>
-# pair after the marker. aes-js lives in the second pair.
-awk '/^<!-- ─── Bundled libraries/,/^<script type="module">/' index.html
-```
-
-The fflate match is byte-exact except for a leading `/*! fflate ... */` attribution comment that's prepended on the same line as the opening `<script>` tag (stripped trivially with `sed 's|/\*!.*\*/||'`). The aes-js file already carries its own MIT license header upstream, so nothing was added — the block between `<script>` and `</script>` is the upstream file unmodified.
-
-**Verify the inlined webfonts.** The three `@font-face` rules near the top of the `<head>` reference data URLs containing base64-encoded woff2 binaries. Decode any one (`base64 -d`) and compare to the same file pulled from Google Fonts' CDN — they should byte-match. The font URLs are listed in the `index.html` git history at the commit that introduced bundling.
-
-**Reproduce the build yourself.** There is no toolchain — the build is "concatenate, no minify." If you'd rather not trust the published HTML, you can produce an equivalent file by:
-
-1. Checking out the last commit before bundling and grabbing that `index.html`.
-2. Splicing the upstream `fflate` UMD and `aes-js` sources into a `<script>` pair just before the main `<script type="module">`.
-3. Removing the original `import ... from 'https://cdn.jsdelivr.net/...'` lines from the module script.
-4. Replacing the three `<link>` lines in `<head>` (Google Fonts preconnects + stylesheet) with a `<style>` block of three `@font-face` rules pointing at base64-encoded woff2 data URLs.
-5. Diffing against the published `index.html`.
-
-Any divergence is either a bug or a tampering signal — both worth knowing about.
-
-## Prior art and credits
-
-This tool stands on the shoulders of others.
-
-**Bundled libraries** (inlined into `index.html`, MIT-licensed):
-
-- [**fflate**](https://github.com/101arrowz/fflate) v0.8.2 by [Arjun Barrett](https://github.com/101arrowz) — pure-JS gzip/zip/inflate. Used to gunzip the inner `db.gz`, unzip `.unf` payloads, and gunzip the outer `.unifi` tar. Without it, none of the layers come apart.
-- [**aes-js**](https://github.com/ricmoo/aes-js) v3.1.2 by [Richard Moore](https://github.com/ricmoo) — pure-JS AES implementation. Used for both AES-128-CBC (`.unf`) and AES-256-CBC (`.unifi`) decryption.
-
-**Prior art**:
-
-- [**zhangyoufu/unifi-backup-decrypt**](https://github.com/zhangyoufu/unifi-backup-decrypt) — the canonical Python decryptor for `.unf`. First to publicly document the static `.unf` key/IV pair.
-- [**Darknetzz/UniFi-Backup-Explorer**](https://github.com/Darknetzz/UniFi-Backup-Explorer) — the closest prior browser-based reader and a useful reference for the .unf flow.
-
-## Privacy
-
-- The page makes **zero outbound requests** at runtime. JS libraries (fflate, aes-js) and webfonts (Outfit, Plus Jakarta Sans, JetBrains Mono) are all bundled directly into `index.html`. It works air-gapped.
-- Backups are read using the browser's `FileReader` API. They never touch a network.
-- If you want to verify, open DevTools → Network with the file open, then drop a backup. The Network panel will stay empty.
+No SQL from a backup is executed. The reader does not edit backups, restore configuration, repackage archives, modify devices or query the live network. Recorded addresses, health values, sessions and last-seen times describe the backup snapshot.
 
 ## Limitations
 
-- Floorplan images are routinely missing or broken in `.unf` backups (known Ubiquiti issue) — this tool surfaces what's there but cannot recover what UniFi didn't save.
-- The `.unifi` decryption key is static and embedded in UniFi OS firmware. If Ubiquiti rotates to a new format version (`_v3.unifi`), this tool will need a corresponding update.
-- The tool is read-only. You cannot edit a backup and re-pack it. (This is intentional — repacking would require regenerating valid CRCs and keeping the archive byte-aligned, which is out of scope.)
+- Format support is based on the implemented PostgreSQL schemas and container layouts. Future UniFi changes may require a decoder update.
+- A displayed record is not confirmation that the corresponding device or service is currently online or configured that way.
+- Information that is absent, unsupported, encrypted or unresolved cannot be recovered simply by rendering the backup. Review Coverage and record-level explanations.
+- Custom views do not reproduce the complete UniFi management interface or guarantee complete firewall, service or console coverage.
+- Large archives can consume substantial browser memory even when the input file is below the size limit.
 
-## License
+## Credits and licence
 
-[MIT](LICENSE) — do what you want, no warranty. If you build something cool with it, a link back is appreciated but not required.
+Original project: [UniFi Backup Reader by AyeTech](https://github.com/ShaunLeslie/unifi-backup-reader). This Access edition changes the interface and decoder behaviour described above.
 
----
+Bundled libraries and notices are retained in `index.html`:
 
-Built with care by [AyeTech](https://ayetech.au). Made for engineers who've ever stared at an old UniFi backup wondering what was actually in it.
+| Library | Version | Licence | Purpose |
+| --- | --- | --- | --- |
+| [fflate](https://github.com/101arrowz/fflate) | 0.8.2 | MIT | ZIP and gzip decompression |
+| [aes-js](https://github.com/ricmoo/aes-js) | 3.1.2 | MIT | Local AES backup decryption |
+| [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) | 1.4.4 | MIT | Local WireGuard QR generation |
+| [TweetNaCl.js](https://github.com/dchest/tweetnacl-js) | 1.0.3 | Public domain / Unlicense | X25519 private/public key matching |
+
+Prior work credited by the original project includes [zhangyoufu/unifi-backup-decrypt](https://github.com/zhangyoufu/unifi-backup-decrypt) and [Darknetzz/UniFi-Backup-Explorer](https://github.com/Darknetzz/UniFi-Backup-Explorer).
+
+Project licence: [MIT](LICENSE). Retain the applicable original and third-party notices when redistributing.
